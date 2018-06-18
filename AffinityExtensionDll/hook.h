@@ -1,12 +1,11 @@
 #pragma once
 
-bool hookFuncByName(PCHAR name, ULONG_PTR newFunc);
+bool hookFunction(PCHAR name, ULONG_PTR newFunc);
 
-bool get_hListView(HWND hWnd, HWND *p_hListView, bool *is_hListView_got);
-int getListViewNumOfCols(HWND hWnd);
+bool get_hListView(HWND hWnd, HWND *p_hListView, bool *hListView_flag);
+int getNrColumns(HWND hWnd);
 
 bool addAffinityColumn(HWND hWnd, int idx);
-bool drawAffinityByPid(HWND hWnd, int pidColNum);
-//bool getAffinityByPid(int pid, PWCHAR affBuf, int cpuNum);
+bool displayAffinityByPid(HWND hWnd, int pid_column);
 
 BOOL CALLBACK EnumChildProc(HWND hwnd, LPARAM lParam);

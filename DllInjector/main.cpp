@@ -1,11 +1,14 @@
 #include "stdafx.h"
-#include "DllInjector.h"
+#include "Injector.h"
+#include <iostream>
 
 int main()
 {
-	DllInjector injector = DllInjector(PROGRAM_PATH);
-	if (!injector.inject(DLL_PATH))
-		ErrorLogRet(-1, "Injection failed");
+	Injector injector = Injector(PROGRAM_PATH, DLL_PATH);
+
+    if (injector.Inject()) {
+        std::cout << "Something went wrong." << std::endl;
+    }
 
 	return 0;
 }

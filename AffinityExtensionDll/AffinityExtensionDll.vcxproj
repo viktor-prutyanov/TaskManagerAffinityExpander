@@ -23,6 +23,7 @@
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>AffinityExtensionDll</RootNamespace>
     <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <ProjectName>ExtensionLib</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -142,14 +143,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="const.h" />
     <ClInclude Include="hook.h" />
-    <ClInclude Include="hooked_funcs.h" />
+    <ClInclude Include="hooks.h" />
     <ClInclude Include="import.h" />
     <ClInclude Include="peb.h" />
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="support.h" />
-    <ClInclude Include="targetver.h" />
+    <ClInclude Include="log_report.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -167,7 +166,7 @@
       </PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="hook.cpp" />
-    <ClCompile Include="hooked_funcs.cpp" />
+    <ClCompile Include="hooks.cpp" />
     <ClCompile Include="import.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

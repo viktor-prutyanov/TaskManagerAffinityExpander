@@ -2,34 +2,28 @@
 #include "import.h"
 #include "peb.h"
 
-ULONG_PTR changeFuncAddrByName(PCHAR name, ULONG_PTR newFunc, PVOID pOrigThunk, PVOID pThunk, ULONG_PTR pBase) {
+ULONG_PTR substituteFuncByName(PCHAR name, ULONG_PTR newFunc, PVOID pOrigThunk, PVOID pThunk, ULONG_PTR pBase) {
 	PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pBase;
 	PIMAGE_NT_HEADERS pPEHeader = (PIMAGE_NT_HEADERS)(pBase + pDosHeader->e_lfanew);
 	WORD machine = pPEHeader->FileHeader.Machine;
 
     if (machine == IMAGE_FILE_MACHINE_AMD64)
-        return changeFuncAddrByNameX64(name, newFunc, (PIMAGE_THUNK_DATA64)pOrigThunk, (PIMAGE_THUNK_DATA64)pThunk, pBase);
-    else
-        return NULL;
+        return do_substituteFuncByName(name, newFunc, (PIMAGE_THUNK_DATA64)pOrigThunk, (PIMAGE_THUNK_DATA64)pThunk, pBase);
+
+    return NULL;
 }
 
-ULONG_PTR changeFuncAddrByNameX64(PCHAR name, ULONG_PTR newFunc, PIMAGE_THUNK_DATA64 pOrigThunk, PIMAGE_THUNK_DATA64 pThunk, ULONG_PTR pBase) {
-    InfoLog("Let's change function addr by name %s", name);
+ULONG_PTR do_substituteFuncByName(PCHAR name, ULONG_PTR newFunc, PIMAGE_THUNK_DATA64 pOrigThunk, PIMAGE_THUNK_DATA64 pThunk, ULONG_PTR pBase) {
+    PCHAR current_name;
+
 	while (pOrigThunk->u1.AddressOfData) {
-		if (pOrigThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG64)
-			InfoLogRet(0, "Ordinal higher bit is set!");
+		if (!pOrigThunk || pOrigThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG64 || !pThunk)
+			log_report_err(NULL, "Failed to substitute %s", name);
 
-		if (pThunk == NULL)
-			InfoLogRet(NULL, "pThunk is NULL");
-
-		if (pOrigThunk == NULL)
-			InfoLogRet(NULL, "pOrigThunk is NULL");
-
-		PCHAR curr_name = ((PIMAGE_IMPORT_BY_NAME)(pOrigThunk->u1.AddressOfData + pBase))->Name;
-		if (!strcmp(curr_name, name)) {
+		current_name = ((PIMAGE_IMPORT_BY_NAME)(pOrigThunk->u1.AddressOfData + pBase))->Name;
+		if (!strcmp(current_name, name)) {
 			ULONG_PTR originalAddr = (ULONG_PTR)(pThunk->u1.Function);
-			InfoLog("\n\n### The func is founded: %s | %p ###\n\n", curr_name, originalAddr);
-			InfoLog("Trying to hook it!");
+			log_report("Function %s has been found at 0x%llx", current_name, originalAddr);
 
 			DWORD oldProtect;
 			VirtualProtect(&(pThunk->u1.Function), sizeof(newFunc), PAGE_EXECUTE_READWRITE, &oldProtect);
@@ -46,32 +40,33 @@ ULONG_PTR changeFuncAddrByNameX64(PCHAR name, ULONG_PTR newFunc, PIMAGE_THUNK_DA
 	return NULL;
 }
 
-ULONG_PTR getImportRVA(ULONG_PTR pBase) {
+ULONG_PTR getImportDirRVA(ULONG_PTR pBase) {
 	PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pBase;
 	PIMAGE_NT_HEADERS pPEHeader = (PIMAGE_NT_HEADERS)(pBase + pDosHeader->e_lfanew);
-	PIMAGE_DATA_DIRECTORY pDD = getPDataDirectory(pPEHeader);
-	return pDD[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+	PIMAGE_DATA_DIRECTORY pDataDirectory = getDataDirectory(pPEHeader);
+	return pDataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
 }
 
-PIMAGE_DATA_DIRECTORY getPDataDirectory(PIMAGE_NT_HEADERS pPEHeader) {
-	PIMAGE_DATA_DIRECTORY pDD;
+#pragma warning(push)
+#pragma warning(disable: 4172)
+PIMAGE_DATA_DIRECTORY getDataDirectory(PIMAGE_NT_HEADERS pPEHeader) {
+	PIMAGE_DATA_DIRECTORY pDataDirectory;
 	WORD machine = pPEHeader->FileHeader.Machine;
 
 	if (machine == IMAGE_FILE_MACHINE_AMD64) {
 		IMAGE_OPTIONAL_HEADER64 optHeader;
 		memcpy(&optHeader, &(pPEHeader->OptionalHeader), sizeof(optHeader));
-		pDD = optHeader.DataDirectory;
+		pDataDirectory = optHeader.DataDirectory;
 	}
 	else {
-		IMAGE_OPTIONAL_HEADER32 optHeader;
-		memcpy(&optHeader, &(pPEHeader->OptionalHeader), sizeof(optHeader));
-		pDD = optHeader.DataDirectory;
+        return NULL;
 	}
 
-	return pDD;
+	return pDataDirectory;
 }
+#pragma warning(push)
 
-ULONG_PTR get_pBase() {
+ULONG_PTR code_get_image_base_addr() {
 	DWORD offset = 0x60;
 	PPEB64 pPeb = (PPEB64)__readgsqword(offset);
 	return pPeb->ImageBaseAddress;
@@ -79,11 +74,11 @@ ULONG_PTR get_pBase() {
 
 bool checkMZ(ULONG_PTR pBase) {
 	PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pBase;
-	char firstSymbol = pDosHeader->e_magic & 0xFF,
-		secondSymbol = (pDosHeader->e_magic >> 8) & 0xFF;
+    char M = pDosHeader->e_magic & 0xFF;
+	char Z = (pDosHeader->e_magic >> 8) & 0xFF;
 
-	if (firstSymbol == 'M' && secondSymbol == 'Z')
-		InfoLogRet(true, "MZ signature succesfully checked!");
+    if (M == 'M' && Z == 'Z')
+        return true;
 
-	InfoLogRet(false, "Error during MZ signature checking");
+	log_report_err(false, "PE signature check failed");
 }

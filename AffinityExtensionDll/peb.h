@@ -2,7 +2,6 @@
 
 #include <Windows.h>
 
-
 #pragma pack(push)
 #pragma pack(1)
 template <class T>
@@ -116,6 +115,5 @@ struct _PEB_T
 	T MinimumStackCommit;
 };
 
-typedef _PEB_T<DWORD, DWORD64, 34> PEB32, *PPEB32;
 typedef _PEB_T<DWORD64, DWORD, 30> PEB64, *PPEB64;
 #pragma pack(pop)

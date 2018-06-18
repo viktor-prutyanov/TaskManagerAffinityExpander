@@ -5,48 +5,35 @@
 #include <CommCtrl.h>
 #include <stdlib.h>
 
-bool hookFuncByName(PCHAR name, ULONG_PTR newFunc) {
-	ULONG_PTR pBase = get_pBase();
-	InfoLog("pBase: %p\n", pBase);
-	if (!checkMZ(pBase))
+/*
+    Finds function address in PE Import Directory and replace it with given address
+*/
+bool hookFunction(PCHAR name, ULONG_PTR newFunc) {
+	ULONG_PTR imageBase = code_get_image_base_addr();
+    ULONG_PTR importRVA, pHookedFunc;
+    PIMAGE_IMPORT_DESCRIPTOR importDesc;
+    PVOID pOrigThunk, pThunk;
+
+	if (!checkMZ(imageBase))
 		return false;
 
-	ULONG_PTR importRVA = getImportRVA(pBase);
-	if (importRVA == NULL)
-		InfoLogRet(false, "importRVA is NULL");
+	if (!(importRVA = getImportDirRVA(imageBase)))
+		log_report_err(false, "Invalid import RVA");
 
-	PIMAGE_IMPORT_DESCRIPTOR pImpDir = (PIMAGE_IMPORT_DESCRIPTOR)(pBase + importRVA);
-	while (pImpDir->Characteristics) {
-		PVOID pOrigThunk = (PVOID)(pImpDir->OriginalFirstThunk + pBase);
-		if (!pImpDir->OriginalFirstThunk)
-			InfoLog("Original first thunk is NULL");
+	importDesc = (PIMAGE_IMPORT_DESCRIPTOR)(imageBase + importRVA);
+	while (importDesc->Characteristics) {
+		pOrigThunk = (PVOID)(importDesc->OriginalFirstThunk + imageBase);
 
-		PVOID pThunk = (PVOID)(pImpDir->FirstThunk + pBase);
-		if (!pThunk)
-			InfoLog("pThunk in NULL");
+		if (!importDesc->OriginalFirstThunk)
+			log_report("Invalid OriginalFirstThunk");
 
-		ULONG_PTR pHookedFunc = changeFuncAddrByName(name, newFunc, pOrigThunk, pThunk, pBase);
-		if (pHookedFunc != NULL) {
-			InfoLog("Original address of hooked func: %p\n", pHookedFunc);
+		if (!(pThunk = (PVOID)(importDesc->FirstThunk + imageBase)))
+			log_report("Invalid FirstThunk");
+
+		if (pHookedFunc = substituteFuncByName(name, newFunc, pOrigThunk, pThunk, imageBase))
 			break;
-		}
 
-		pImpDir++;
-	}
-
-	return true;
-}
-
-bool get_hListView(HWND hWnd, HWND *p_hListView, bool *is_hListView_got) {
-	WCHAR buf[TITLE_SIZE];
-	if (!GetWindowText(hWnd, buf, sizeof(buf)))
-		InfoLogRet(false, "GetWindowText failed in get_hListView");
-
-	if (!wcscmp(buf, PROCESSES)) {
-		InfoLog("Processes table has found!");
-		(*is_hListView_got) = true;
-		if (!EnumChildWindows(hWnd, EnumChildProc, (LPARAM)p_hListView))
-			InfoLog("EnumChildWindows failed in get_hListView");
+		importDesc++;
 	}
 
 	return true;
@@ -54,13 +41,31 @@ bool get_hListView(HWND hWnd, HWND *p_hListView, bool *is_hListView_got) {
 
 BOOL CALLBACK EnumChildProc(HWND hwnd, LPARAM lParam) {
 	WCHAR buf[TITLE_SIZE];
-	if (!GetWindowText(hwnd, buf, sizeof(buf)))
-		InfoLogRet(false, "GetWindowText failed in EnumChilProc");
 
-	if (!wcscmp(buf, PROCESSES)) {
-		InfoLog("Processes ListView is found!");
+	if (!GetWindowText(hwnd, buf, sizeof(buf)))
+		log_report_err(false, "Failed GetWindowText");
+
+	if (!wcscmp(buf, STR_PROCESSES)) {
+		log_report("ListView has been found in \"Processes\" tab");
 		memcpy((PVOID)lParam, &hwnd, sizeof(hwnd));
+
 		return false;
+	}
+
+	return true;
+}
+
+
+bool get_hListView(HWND hWnd, HWND *p_hListView, bool *hListView_flag) {
+	WCHAR buf[TITLE_SIZE];
+
+	if (!GetWindowText(hWnd, buf, sizeof(buf)))
+		log_report_err(false, "Failed GetWindowText");
+
+	if (!wcscmp(buf, STR_PROCESSES)) {
+		log_report("\"Processes\" tab has been found");
+		(*hListView_flag) = true;
+        EnumChildWindows(hWnd, EnumChildProc, (LPARAM)p_hListView);
 	}
 
 	return true;
@@ -99,41 +104,36 @@ void getAffinityByPid(int pid, PWCHAR affinity, int nr_cpus) {
 	affinity[nr_cpus] = '\0';
 }
 
-bool drawAffinityByPid(HWND hWnd, int pidColNum) {
-	if (pidColNum == -1)
-		InfoLogRet(false, "pidColNum is -1 in drawAffinityByPID");
-
-	int itemCount = ListView_GetItemCount(hWnd);
-
+bool displayAffinityByPid(HWND hWnd, int pid_column) {
+    int itemCount = ListView_GetItemCount(hWnd);
 	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	int nr_cpus = sysinfo.dwNumberOfProcessors;
-
 	WCHAR buf[BUFFSIZE] = {};
 	WCHAR affBuf[MAX_CPU_NUM] = {};
+    int nr_cpus, pid, affinity_column;
 
-	for (int iItem = 0; iItem < itemCount; ++iItem) {
-		ListView_GetItemText(hWnd, iItem, pidColNum, buf, sizeof(buf));
+    if (pid_column == -1)
+        return false;
 
-		int pid = _wtoi(buf);
+	GetSystemInfo(&sysinfo);
+	nr_cpus = sysinfo.dwNumberOfProcessors;
 
+	for (int i = 0; i < itemCount; i++) {
+		ListView_GetItemText(hWnd, i, pid_column, buf, sizeof(buf));
+		pid = _wtoi(buf);
         getAffinityByPid(pid, affBuf, nr_cpus);
-
-		int affinityCol = getListViewNumOfCols(hWnd) - 1;  // -1 because of affinity column itself
-		ListView_SetItemText(hWnd, iItem, affinityCol, affBuf);
+        affinity_column = getNrColumns(hWnd) - 1;
+		ListView_SetItemText(hWnd, i, affinity_column, affBuf);
 	}
 
 	return true;
 }
 
-int getListViewNumOfCols(HWND hWnd) {
-	HWND hWndHdr = ListView_GetHeader(hWnd);
-	if (!hWndHdr)
-		InfoLog("ListView_GetHeader returned NULL in getListViewNumOfCols");
+int getNrColumns(HWND hWnd) {
+	HWND hWndHeader = ListView_GetHeader(hWnd);
+    int nr_columns;
 
-	int numOfCols = Header_GetItemCount(hWndHdr);
-	if (numOfCols == -1)
-		InfoLog("Header_getItemCount failed in getListViewNumOfCols");
+	if ((nr_columns = Header_GetItemCount(hWndHeader)) == -1)
+		log_report("Header_GetItemCount failed");
 
-	return numOfCols;
+	return nr_columns;
 }
